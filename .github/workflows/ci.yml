@@ -5,12 +5,22 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # Sur Windows, la sortie standard n'utilise pas UTF-8 par défaut quand
+  # elle est redirigée (le cas en CI) avant Python 3.15 — or le code et les
+  # messages d'exception sont en français avec accents partout. Sans ça,
+  # un simple print() ou une exception affichée peut planter avec
+  # UnicodeEncodeError, sans rapport avec un vrai bug du code.
+  PYTHONUTF8: "1"
+
 jobs:
   test:
-    name: Tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
@@ -32,8 +42,12 @@ jobs:
         run: uv run pytest
 
   core-only-import:
-    name: Import sans les extras optionnelles
-    runs-on: ubuntu-latest
+    name: Import sans les extras optionnelles (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -51,17 +65,4 @@ jobs:
         run: uv pip install --system -e .
 
       - name: Vérifier que le paquet de base fonctionne sans openpyxl/python-docx/fpdf2/Pillow
-        run: |
-          python -c "
-          from local_fake import LocalFake
-          local = LocalFake()
-          assert local.ci.first_name()
-          assert local.file.svg().startswith(b'<svg')
-          try:
-              local.file.excel()
-          except Exception as exc:
-              assert type(exc).__name__ == 'MissingOptionalDependencyError'
-          else:
-              raise SystemExit('excel() aurait dû lever MissingOptionalDependencyError sans l_extra files')
-          print('OK: le paquet de base fonctionne sans les dépendances optionnelles')
-          "
+        run: python scripts/check_core_only_import.py
