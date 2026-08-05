@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (avec extras files)
+        run: uv sync --all-extras
+
+      - name: Run tests
+        run: uv run pytest
+
+  core-only-import:
+    name: Import sans les extras optionnelles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Installer uniquement le paquet de base (sans l'extra "files")
+        run: uv pip install --system -e .
+
+      - name: Vérifier que le paquet de base fonctionne sans openpyxl/python-docx/fpdf2/Pillow
+        run: |
+          python -c "
+          from local_fake import LocalFake
+          local = LocalFake()
+          assert local.ci.first_name()
+          assert local.file.svg().startswith(b'<svg')
+          try:
+              local.file.excel()
+          except Exception as exc:
+              assert type(exc).__name__ == 'MissingOptionalDependencyError'
+          else:
+              raise SystemExit('excel() aurait dû lever MissingOptionalDependencyError sans l_extra files')
+          print('OK: le paquet de base fonctionne sans les dépendances optionnelles')
+          "
